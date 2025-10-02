@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Deteksi Warna Midpoint</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {font-family: Arial, Helvetica, sans-serif; text-align:center; margin:12px;}
+    .video-container { position: relative; display:inline-block; max-width: 96vw; }
+    video { width: 100%; height: auto; border-radius: 6px; background:#000; }
+    canvas.overlay { position:absolute; left:0; top:0; pointer-events:none; }
+    #controls { margin-top:12px; }
+    button { padding:8px 14px; font-size:16px; margin:0 6px; }
+    #colorPreview { width:80px; height:80px; border:1px solid #333; display:inline-block; vertical-align: middle; margin-left:12px; }
+    #info { margin-top:10px; font-family: monospace; white-space:pre; text-align:left; display:inline-block;}
+    #capturedPreview { margin-top:12px; max-width: 90vw; border:1px solid #ccc; }
+    small { color:#666; display:block; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <h2>Deteksi Warna Midpoint</h2>
+
+  <div class="video-container" id="videoBox">
+    <video id="video" autoplay playsinline></video>
+    <canvas class="overlay" id="overlay"></canvas>
+  </div>
+
+  <div id="controls">
+    <button id="btnCapture">📸 Jepret</button>
+    <button id="btnSend" disabled>⬆️ Kirim ke Server</button>
+    <div id="colorPreview" title="Preview warna midpoint"></div>
+  </div>
+
+  <div id="info">
+    <div id="rgbText">RGB: -</div>
+    <div id="labText">CIELAB: -</div>
+    <div id="extraText">Server result: -</div>
+    <small>Titik abu-abu di tengah adalah midpoint sampling.</small>
+  </div>
+
+  <div>
+    <img id="capturedPreview" alt="Captured preview" />
+  </div>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const ctxOverlay = overlay.getContext('2d');
+
+const btnCapture = document.getElementById('btnCapture');
+const btnSend = document.getElementById('btnSend');
+const rgbText = document.getElementById('rgbText');
+const labText = document.getElementById('labText');
+const extraText = document.getElementById('extraText');
+const colorPreview = document.getElementById('colorPreview');
+const capturedPreview = document.getElementById('capturedPreview');
+
+let lastCapturedRGB = null;
+let lastCapturedBlob = null;
+
+// akses kamera
+navigator.mediaDevices.getUserMedia({ video: true })
+  .then(stream => { video.srcObject = stream; })
+  .catch(err => { alert("Error akses kamera: " + err); });
+
+/* Draw midpoint marker */
+function drawOverlay() {
+  const vw = video.clientWidth;
+  const vh = video.clientHeight;
+  overlay.width = vw;
+  overlay.height = vh;
+  ctxOverlay.clearRect(0,0,overlay.width, overlay.height);
+  const cx = overlay.width/2;
+  const cy = overlay.height/2;
+  ctxOverlay.beginPath();
+  ctxOverlay.arc(cx, cy, Math.max(4, Math.round(Math.min(vw,vh)*0.012)), 0, Math.PI*2);
+  ctxOverlay.fillStyle = '#9a9a9a';
+  ctxOverlay.fill();
+  ctxOverlay.lineWidth = 2;
+  ctxOverlay.strokeStyle = '#ffffff';
+  ctxOverlay.stroke();
+}
+
+video.addEventListener('loadedmetadata', drawOverlay);
+window.addEventListener('resize', drawOverlay);
+
+// tombol capture
+btnCapture.addEventListener('click', async () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const x = Math.floor(canvas.width/2);
+  const y = Math.floor(canvas.height/2);
+
+  const pixel = ctx.getImageData(x, y, 1, 1).data;
+  const r = pixel[0], g = pixel[1], b = pixel[2];
+  lastCapturedRGB = [r,g,b];
+
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+  lastCapturedBlob = blob;
+  capturedPreview.src = URL.createObjectURL(blob);
+
+  rgbText.textContent = `RGB: ${r}, ${g}, ${b}`;
+  labText.textContent = "CIELAB: (akan dihitung server)";
+  extraText.textContent = "Klik Kirim ke Server untuk lanjut";
+  colorPreview.style.backgroundColor = `rgb(${r},${g},${b})`;
+
+  btnSend.disabled = false;
+});
+
+// tombol kirim
+btnSend.addEventListener('click', async () => {
+  if (!lastCapturedRGB) { alert("Capture dulu!"); return; }
+  btnSend.disabled = true;
+  extraText.textContent = "Mengirim ke server...";
+
+  try {
+    const res = await fetch("/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ r:lastCapturedRGB[0], g:lastCapturedRGB[1], b:lastCapturedRGB[2] })
+    });
+    const data = await res.json();
+    if (data.rgb) rgbText.textContent = `RGB (server): ${data.rgb}`;
+    if (data.lab) labText.textContent = `CIELAB: ${data.lab.map(v=>v.toFixed(2))}`;
+    extraText.textContent = "Data diterima server.";
+  } catch (err) {
+    console.error(err);
+    extraText.textContent = "Error: " + err.message;
+  } finally {
+    btnSend.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

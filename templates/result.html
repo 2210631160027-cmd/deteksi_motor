@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hasil Proses</title>
+</head>
+<body>
+    <h2>Hasil Pemrosesan</h2>
+    <p>Original:</p>
+    <img src="{{ url_for('processed_file', filename=original) }}" width="300"><br><br>
+
+    <p>RGB:</p>
+    <img src="{{ url_for('processed_file', filename=rgb) }}" width="300"><br><br>
+
+    <p>CIELAB:</p>
+    <img src="{{ url_for('processed_file', filename=lab) }}" width="300"><br><br>
+
+    <a href="{{ url_for('upload_file') }}">Ambil / Upload lagi</a>
+</body>
+</html>
